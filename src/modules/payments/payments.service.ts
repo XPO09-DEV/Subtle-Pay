@@ -1,0 +1,167 @@
+import { isAddress } from "viem";
+import { config } from "../../config.js";
+import {
+  formatMon,
+  formatToken,
+  getNativeBalance,
+  getTokenBalance,
+  sendNative,
+  sendToken,
+  waitConfirmed,
+} from "../../chain/monad.js";
+import { db, withTransaction, type TransactionRow } from "../../db.js";
+import { newId } from "../../lib/crypto.js";
+import {
+  assertPaymentWithinLimits,
+  localMinorToUsdMicro,
+  microToDecimalString,
+  minorToDecimalString,
+  parseAmountMinor,
+  parseUsdToMicro,
+  usdMicroToLocalMinor,
+  type Currency,
+} from "../../lib/currency.js";
+import { badRequest, insufficientFunds, notFound, unprocessable } from "../../lib/errors.js";
+import { withDecryptedSecret } from "../../lib/kms.js";
+import { audit } from "../../lib/audit.js";
+import { normalizeAlias } from "../alias/alias.service.js";
+import { getRates } from "../rates/rates.service.js";
+import { getWalletRow } from "../wallet/wallet.service.js";
+
+const locks = new Map<string, Promise<unknown>>();
+
+async function exclusive<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = locks.get(userId) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  locks.set(userId, run.then(() => undefined, () => undefined));
+  return run;
+}
+
+function parseAmount(amount: string | number, currency: Currency): number {
+  const text = typeof amount === "number" ? String(amount) : amount.trim();
+  return currency === "USD" ? parseUsdToMicro(text) : parseAmountMinor(text, currency);
+}
+
+export async function sendPayment(
+  userId: string,
+  input: { to: string; amount: string | number; amountCurrency: string; note?: string },
+  ip?: string
+) {
+  return exclusive(userId, async () => {
+    const currency = input.amountCurrency.trim().toUpperCase() as Currency;
+    const displayMinorOrMicro = parseAmount(input.amount, currency);
+    const rates = await getRates(currency);
+    const usdMicro = currency === "USD" ? displayMinorOrMicro : localMinorToUsdMicro(displayMinorOrMicro, rates.usdLocal, currency);
+    assertPaymentWithinLimits(usdMicro);
+    if (input.note && input.note.length > 140) throw badRequest("Note is too long");
+
+    const from = getWalletRow(userId);
+    const dest = await resolveDestination(input.to);
+    if (dest.address.toLowerCase() === from.address.toLowerCase()) {
+      throw unprocessable("You cannot pay yourself", "SELF_PAYMENT");
+    }
+
+    const stable = Boolean(config.STABLE_TOKEN_ADDRESS);
+    const tokenBase = stable ? BigInt(usdMicro) : monWei(usdMicro, rates.tokenUsd);
+    if (tokenBase <= 0n) throw badRequest("Amount is too small", "INVALID_AMOUNT");
+
+    const balance = stable ? await getTokenBalance(from.address as `0x${string}`) : await getNativeBalance(from.address as `0x${string}`);
+    if (balance === null || balance < tokenBase) throw insufficientFunds();
+
+    const txId = newId();
+    const now = Date.now();
+    db.prepare(
+      `INSERT INTO transactions
+         (id, from_user, to_user, from_address, to_address, amount_micro, display_currency, fx_rate, status, note, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
+    ).run(txId, userId, dest.userId, from.address, dest.address, usdMicro, currency, rates.usdLocal, input.note ?? null, now, now);
+
+    try {
+      const hash = await withDecryptedSecret(from.enc_priv_key, { userId, address: from.address }, async (secret) => {
+        const key = `0x${secret.toString("hex")}` as `0x${string}`;
+        return stable
+          ? sendToken(key, dest.address as `0x${string}`, tokenBase)
+          : sendNative(key, dest.address as `0x${string}`, tokenBase);
+      });
+      const status = await waitConfirmed(hash);
+      const confirmedAt = status === "confirmed" ? Date.now() : null;
+      db.prepare(
+        `UPDATE transactions SET status = ?, tx_hash = ?, updated_at = ?, confirmed_at = ? WHERE id = ?`
+      ).run(status, hash, Date.now(), confirmedAt, txId);
+      audit(userId, "payment.send", { txId, status, usdMicro }, ip);
+      return {
+        txId,
+        status,
+        tokenAmount: stable ? formatToken(tokenBase, 6) : formatMon(tokenBase),
+        usdValue: microToDecimalString(usdMicro),
+        txHash: hash,
+      };
+    } catch (err) {
+      db.prepare(
+        `UPDATE transactions SET status = 'failed', failure_reason = ?, updated_at = ? WHERE id = ?`
+      ).run("chain", Date.now(), txId);
+      throw err;
+    }
+  });
+}
+
+function monWei(usdMicro: number, tokenUsd: number): bigint {
+  if (!Number.isFinite(tokenUsd) || tokenUsd <= 0) throw badRequest("No MON price", "RATES_UNAVAILABLE");
+  const mon = usdMicro / 1_000_000 / tokenUsd;
+  return BigInt(Math.round(mon * 1e18));
+}
+
+async function resolveDestination(to: string): Promise<{ address: string; userId: string | null }> {
+  const raw = to.trim();
+  if (isAddress(raw)) {
+    const row = db.prepare("SELECT user_id, address FROM wallets WHERE lower(address) = lower(?)").get(raw) as
+      | { user_id: string; address: string }
+      | undefined;
+    return { address: row?.address ?? raw, userId: row?.user_id ?? null };
+  }
+  const alias = normalizeAlias(raw);
+  const row = db
+    .prepare(
+      `SELECT a.user_id, w.address
+         FROM aliases a JOIN wallets w ON w.user_id = a.user_id
+        WHERE a.alias = ?`
+    )
+    .get(alias) as { user_id: string; address: string } | undefined;
+  if (!row) throw notFound("No account uses that name", "ALIAS_NOT_FOUND");
+  return { address: row.address, userId: row.user_id };
+}
+
+export function listPayments(userId: string) {
+  const user = db.prepare("SELECT currency FROM users WHERE id = ?").get(userId) as { currency: Currency };
+  const rows = db
+    .prepare(
+      `SELECT t.*,
+              fa.alias AS from_alias,
+              ta.alias AS to_alias
+         FROM transactions t
+         LEFT JOIN aliases fa ON fa.user_id = t.from_user
+         LEFT JOIN aliases ta ON ta.user_id = t.to_user
+        WHERE t.from_user = ? OR t.to_user = ?
+        ORDER BY t.created_at DESC
+        LIMIT 50`
+    )
+    .all(userId, userId) as Array<TransactionRow & { from_alias: string | null; to_alias: string | null }>;
+
+  return rows.map((row) => {
+    const outgoing = row.from_user === userId;
+    const localMinor = usdMicroToLocalMinor(row.amount_micro, row.fx_rate, row.display_currency as Currency);
+    return {
+      id: row.id,
+      direction: outgoing ? "out" : "in",
+      counterparty: outgoing ? row.to_alias ?? row.to_address : row.from_alias ?? row.from_address,
+      usdValue: microToDecimalString(row.amount_micro),
+      localValue: minorToDecimalString(localMinor, row.display_currency as Currency),
+      displayCurrency: row.display_currency,
+      status: row.status,
+      txHash: row.tx_hash,
+      createdAt: new Date(row.created_at).toISOString(),
+    };
+  });
+}
+
+export { withTransaction };

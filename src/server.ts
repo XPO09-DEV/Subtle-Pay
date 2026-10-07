@@ -11,6 +11,8 @@ import { authRoutes } from "./modules/auth/auth.routes.js";
 import { aliasRoutes } from "./modules/alias/alias.routes.js";
 import { ratesRoutes } from "./modules/rates/rates.routes.js";
 import { walletRoutes } from "./modules/wallet/wallet.routes.js";
+import { paymentRoutes } from "./modules/payments/payments.routes.js";
+import { withdrawRoutes } from "./modules/withdraw/withdraw.routes.js";
 
 const app = Fastify({
   logger: {
@@ -39,6 +41,8 @@ await app.register(authRoutes);
 await app.register(aliasRoutes);
 await app.register(ratesRoutes);
 await app.register(walletRoutes);
+await app.register(paymentRoutes);
+await app.register(withdrawRoutes);
 
 const hashMs = await initPassword();
 kmsSelfTest();
