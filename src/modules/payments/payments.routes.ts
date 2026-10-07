@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { currentUser, requireAuth } from "../../middleware/auth.js";
 import { runIdempotent } from "../../middleware/idempotency.js";
+import { assertPayableAsset } from "../assets/assets.service.js";
 import { listPayments, sendPayment } from "./payments.service.js";
 
 const sendBody = z.object({
@@ -9,11 +10,13 @@ const sendBody = z.object({
   amount: z.union([z.string(), z.number()]),
   amountCurrency: z.string().length(3),
   note: z.string().max(140).optional(),
+  asset: z.string().max(8).optional(),
 });
 
 export async function paymentRoutes(app: FastifyInstance): Promise<void> {
   app.post("/payments/send", { preHandler: requireAuth }, async (req: FastifyRequest, reply: FastifyReply) => {
     const body = sendBody.parse(req.body);
+    assertPayableAsset(body.asset);
     const key = req.headers["idempotency-key"];
     return runIdempotent(currentUser(req).id, Array.isArray(key) ? key[0] : key, body, reply, () =>
       sendPayment(currentUser(req).id, body, req.ip)

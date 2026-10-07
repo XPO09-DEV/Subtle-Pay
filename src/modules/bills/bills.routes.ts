@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { currentUser, requireAuth } from "../../middleware/auth.js";
 import QRCode from "qrcode";
+import { assertPayableAsset } from "../assets/assets.service.js";
 import { createBill, getBill, payBill } from "./bills.service.js";
 
 export async function billRoutes(app: FastifyInstance): Promise<void> {
@@ -11,8 +12,10 @@ export async function billRoutes(app: FastifyInstance): Promise<void> {
         amount: z.union([z.string(), z.number()]),
         currency: z.string().length(3),
         note: z.string().max(140).optional(),
+        asset: z.string().max(8).optional(),
       })
       .parse(req.body);
+    assertPayableAsset(body.asset);
     return createBill(currentUser(req).id, body.amount, body.currency, body.note, req.ip);
   });
 
