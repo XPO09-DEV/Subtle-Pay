@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { currentUser, requireAuth } from "../../middleware/auth.js";
+import QRCode from "qrcode";
 import { createBill, getBill, payBill } from "./bills.service.js";
 
 export async function billRoutes(app: FastifyInstance): Promise<void> {
@@ -16,6 +17,12 @@ export async function billRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get("/bills/:id", async (req) => getBill((req.params as { id: string }).id));
+
+  app.get("/bills/:id/qr", async (req, reply) => {
+    const bill = await getBill((req.params as { id: string }).id);
+    const png = await QRCode.toBuffer(bill.qr, { width: 512, margin: 1 });
+    return reply.type("image/png").send(png);
+  });
 
   app.post("/bills/:id/pay", { preHandler: requireAuth }, async (req) =>
     payBill(currentUser(req).id, (req.params as { id: string }).id, req.ip)
