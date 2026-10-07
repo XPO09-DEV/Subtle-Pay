@@ -105,4 +105,23 @@ export async function quote(fromRaw: string, toRaw: string, amountRaw: string) {
   };
 }
 
+export async function tokenPrice(currencyRaw: string, amountRaw = "1") {
+  const currency = assertCurrency(currencyRaw);
+  const snap = await current();
+  const localPerUsd = usdRate(snap, currency);
+  const price = snap.tokenUsd * localPerUsd;
+  const amount = Number(amountRaw);
+  if (!Number.isFinite(amount) || amount <= 0) throw badRequest("Invalid amount", "INVALID_AMOUNT");
+  const valueMinor = Math.round(amount * price * 10 ** exponentOf(currency));
+  return {
+    asset: "MON",
+    currency,
+    tokenUsd: snap.tokenUsd,
+    price: minorToDecimalString(Math.round(price * 10 ** exponentOf(currency)), currency),
+    amount: amountRaw,
+    value: minorToDecimalString(valueMinor, currency),
+    updatedAt: new Date(snap.updatedAt).toISOString(),
+  };
+}
+
 export type { Currency };

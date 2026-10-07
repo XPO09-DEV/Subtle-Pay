@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { getRates, listCurrencies, quote } from "./rates.service.js";
+import { getRates, listCurrencies, quote, tokenPrice } from "./rates.service.js";
 
 export async function ratesRoutes(app: FastifyInstance): Promise<void> {
   app.get("/rates", async (req) => {
@@ -12,5 +12,10 @@ export async function ratesRoutes(app: FastifyInstance): Promise<void> {
   app.get("/rates/quote", async (req) => {
     const query = req.query as { from?: string; to?: string; amount?: string };
     return quote(query.from ?? "USD", query.to ?? "INR", query.amount ?? "1");
+  });
+
+  app.get("/rates/token", async (req) => {
+    const query = req.query as { currency?: string; amount?: string };
+    return tokenPrice(query.currency ?? "USD", query.amount ?? "1");
   });
 }
