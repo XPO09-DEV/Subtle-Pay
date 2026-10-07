@@ -70,7 +70,7 @@ export const CURRENCIES = {
   LKR: { name: "Sri Lankan Rupee", exponent: 2 },
   ILS: { name: "Israeli Shekel", exponent: 2 },
   RON: { name: "Romanian Leu", exponent: 2 },
-} } as const satisfies Record<string, CurrencyInfo>;
+} as const satisfies Record<string, CurrencyInfo>;
 
 export type Currency = keyof typeof CURRENCIES;
 
