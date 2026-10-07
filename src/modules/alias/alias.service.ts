@@ -7,7 +7,11 @@ const ALIAS_RE = /^[a-z0-9_]{3,20}$/;
 const RESERVED = new Set(["admin", "support", "subtle", "subtlepay", "monad", "system", "root"]);
 
 export function normalizeAlias(input: string): string {
-  return input.trim().toLowerCase().replace(/^@/, "");
+  return input.trim().toLowerCase().replace(/^@/, "").replace(/@monad$/, "");
+}
+
+export function toHandle(aliasOrId: string): string {
+  return `${aliasOrId}@monad`;
 }
 
 export function claimAlias(userId: string, raw: string, ip?: string): { alias: string } {
