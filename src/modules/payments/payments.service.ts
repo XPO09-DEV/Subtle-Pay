@@ -119,6 +119,13 @@ async function resolveDestination(to: string, ownerId?: string): Promise<{ addre
     if (saved?.accountId) return resolveDestination(saved.accountId);
     if (saved?.address) return resolveDestination(saved.address);
   }
+  if (raw.length === 27) {
+    const user = db.prepare("SELECT id FROM users WHERE id = ?").get(raw.toUpperCase()) as { id: string } | undefined;
+    if (user) {
+      const wallet = db.prepare("SELECT address FROM wallets WHERE user_id = ?").get(user.id) as { address: string };
+      return { address: wallet.address, userId: user.id };
+    }
+  }
   if (isAddress(raw)) {
     const row = db.prepare("SELECT user_id, address FROM wallets WHERE lower(address) = lower(?)").get(raw) as
       | { user_id: string; address: string }

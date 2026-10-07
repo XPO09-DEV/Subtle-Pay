@@ -193,6 +193,39 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_contacts_owner ON contacts(owner_id, name);
     `,
   },
+
+  {
+    version: 3,
+    name: "bills_and_mandates",
+    sql: `
+      CREATE TABLE bills (
+        id           TEXT PRIMARY KEY,
+        merchant_id  TEXT NOT NULL REFERENCES users(id),
+        amount_text  TEXT NOT NULL,
+        currency     TEXT NOT NULL,
+        note         TEXT,
+        status       TEXT NOT NULL CHECK (status IN ('open','paid','expired','cancelled')),
+        payer_id     TEXT REFERENCES users(id),
+        tx_id        TEXT,
+        expires_at   INTEGER NOT NULL,
+        created_at   INTEGER NOT NULL,
+        paid_at      INTEGER
+      ) STRICT;
+      CREATE INDEX idx_bills_merchant ON bills(merchant_id, created_at);
+
+      CREATE TABLE mandates (
+        id            TEXT PRIMARY KEY,
+        user_id       TEXT NOT NULL REFERENCES users(id),
+        merchant_id   TEXT NOT NULL REFERENCES users(id),
+        cap_micro     INTEGER NOT NULL CHECK (cap_micro > 0),
+        currency      TEXT NOT NULL,
+        interval_days INTEGER NOT NULL CHECK (interval_days BETWEEN 1 AND 365),
+        status        TEXT NOT NULL CHECK (status IN ('active','paused','revoked')),
+        created_at    INTEGER NOT NULL
+      ) STRICT;
+      CREATE INDEX idx_mandates_user ON mandates(user_id, created_at);
+    `,
+  },
 ];
 
 const checksum = (sql: string) =>
