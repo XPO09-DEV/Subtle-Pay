@@ -16,6 +16,7 @@ import { withdrawRoutes } from "./modules/withdraw/withdraw.routes.js";
 import { contactRoutes } from "./modules/contacts/contacts.routes.js";
 import { billRoutes } from "./modules/bills/bills.routes.js";
 import { mandateRoutes } from "./modules/mandates/mandates.routes.js";
+import { bridgeRoutes } from "./modules/bridge/bridge.routes.js";
 
 const app = Fastify({
   logger: {
@@ -49,6 +50,7 @@ await app.register(withdrawRoutes);
 await app.register(contactRoutes);
 await app.register(billRoutes);
 await app.register(mandateRoutes);
+await app.register(bridgeRoutes);
 
 const hashMs = await initPassword();
 kmsSelfTest();
