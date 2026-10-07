@@ -175,6 +175,24 @@ const MIGRATIONS: Migration[] = [
       BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
     `,
   },
+
+  {
+    version: 2,
+    name: "contacts",
+    sql: `
+      CREATE TABLE contacts (
+        id         TEXT PRIMARY KEY,
+        owner_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name       TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 32),
+        account_id TEXT REFERENCES users(id),
+        address    TEXT,
+        created_at INTEGER NOT NULL,
+        UNIQUE (owner_id, name),
+        CHECK ((account_id IS NOT NULL AND address IS NULL) OR (account_id IS NULL AND address IS NOT NULL))
+      ) STRICT;
+      CREATE INDEX idx_contacts_owner ON contacts(owner_id, name);
+    `,
+  },
 ];
 
 const checksum = (sql: string) =>

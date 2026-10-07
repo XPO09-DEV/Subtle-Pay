@@ -27,6 +27,7 @@ import { audit } from "../../lib/audit.js";
 import { normalizeAlias } from "../alias/alias.service.js";
 import { getRates } from "../rates/rates.service.js";
 import { getWalletRow } from "../wallet/wallet.service.js";
+import { findContact } from "../contacts/contacts.service.js";
 
 const locks = new Map<string, Promise<unknown>>();
 
@@ -56,7 +57,7 @@ export async function sendPayment(
     if (input.note && input.note.length > 140) throw badRequest("Note is too long");
 
     const from = getWalletRow(userId);
-    const dest = await resolveDestination(input.to);
+    const dest = await resolveDestination(input.to, userId);
     if (dest.address.toLowerCase() === from.address.toLowerCase()) {
       throw unprocessable("You cannot pay yourself", "SELF_PAYMENT");
     }
@@ -111,8 +112,13 @@ function monWei(usdMicro: number, tokenUsd: number): bigint {
   return BigInt(Math.round(mon * 1e18));
 }
 
-async function resolveDestination(to: string): Promise<{ address: string; userId: string | null }> {
+async function resolveDestination(to: string, ownerId?: string): Promise<{ address: string; userId: string | null }> {
   const raw = to.trim();
+  if (ownerId) {
+    const saved = findContact(ownerId, raw);
+    if (saved?.accountId) return resolveDestination(saved.accountId);
+    if (saved?.address) return resolveDestination(saved.address);
+  }
   if (isAddress(raw)) {
     const row = db.prepare("SELECT user_id, address FROM wallets WHERE lower(address) = lower(?)").get(raw) as
       | { user_id: string; address: string }
