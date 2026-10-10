@@ -46,8 +46,8 @@ const schema = z
     PASSWORD_PEPPER: hexBytes(32),
     MASTER_KEY: hexBytes(32), // wraps every per-wallet data key (KMS interface)
 
-    // Optional operator key for ban/unban (header x-operator-key). Leave empty to disable the endpoint.
-    OPERATOR_BAN_KEY: z.string().optional(),
+    // Optional key so our team can approve merchant verification (header x-verify-key)
+    MERCHANT_VERIFY_KEY: z.string().optional(),
     REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
 
     // Password hashing (argon2id)

@@ -5,6 +5,7 @@ import { audit } from "../../lib/audit.js";
 import { assertCurrency, parseAmountMinor, parseUsdToMicro, localMinorToUsdMicro } from "../../lib/currency.js";
 import { getRates } from "../rates/rates.service.js";
 import { sendPayment } from "../payments/payments.service.js";
+import { isVerifiedMerchant } from "../merchant/merchant.routes.js";
 
 export async function createMandate(
   userId: string,
@@ -23,6 +24,9 @@ export async function createMandate(
   const exists = db.prepare("SELECT 1 FROM users WHERE id = ?").get(merchantId);
   if (!exists) throw notFound("Merchant not found");
   if (merchantId === userId) throw badRequest("You cannot mandate yourself");
+  if (!isVerifiedMerchant(merchantId)) {
+    throw badRequest("Autopay is only available for verified businesses");
+  }
 
   const rates = await getRates(currency);
   const entered = currency === "USD" ? parseUsdToMicro(cap) : parseAmountMinor(cap, currency);

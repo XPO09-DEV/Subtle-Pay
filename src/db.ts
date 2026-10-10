@@ -259,6 +259,21 @@ const MIGRATIONS: Migration[] = [
       ALTER TABLE users ADD COLUMN ban_reason TEXT;
     `,
   },
+  {
+    version: 7,
+    name: "merchant_verifications",
+    sql: `
+      CREATE TABLE merchant_verifications (
+        user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        business_name TEXT NOT NULL,
+        contact      TEXT,
+        status       TEXT NOT NULL CHECK (status IN ('pending','verified','rejected')),
+        note         TEXT,
+        requested_at INTEGER NOT NULL,
+        reviewed_at  INTEGER
+      ) STRICT;
+    `,
+  },
 ];
 
 const checksum = (sql: string) =>
