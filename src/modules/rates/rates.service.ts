@@ -10,38 +10,56 @@ import {
   type Currency,
 } from "../../lib/currency.js";
 
-const FX_URL = "https://open.er-api.com/v6/latest/USD";
-const TOKEN_URL = "https://api.coingecko.com/api/v3/simple/price?ids=monad&vs_currencies=usd";
-const TTL_MS = 60_000;
+// Frankfurter: free, no-key, ECB-sourced real-time FX rates
+const FRANKFURTER_URL = "https://api.frankfurter.app/latest?from=USD";
+// CoinGecko for crypto (MON + major assets)
+const CRYPTO_URL =
+  "https://api.coingecko.com/api/v3/simple/price?ids=monad,bitcoin,ethereum,usd-coin,tether&vs_currencies=usd";
+
+const TTL_MS = 30_000; // 30s for fresher real-time feel
 const TOKEN_USD_FALLBACK = 0.025;
 
 interface Cache {
   tokenUsd: number;
-  fx: Record<string, number>;
+  crypto: Record<string, number>; // id -> usd price
+  fx: Record<string, number>; // currency -> units per 1 USD
   updatedAt: number;
+  source: { fx: string; crypto: string };
 }
 
 let cache: Cache | null = null;
 let inflight: Promise<Cache> | null = null;
 
 async function load(): Promise<Cache> {
-  const fxRes = await fetch(FX_URL, { signal: AbortSignal.timeout(5_000) });
-  if (!fxRes.ok) throw new Error(`fx ${fxRes.status}`);
-  const fxJson = (await fxRes.json()) as { rates?: Record<string, number> };
-  if (!fxJson.rates?.INR || !fxJson.rates?.EUR) throw new Error("fx payload missing rates");
+  // Fiat via Frankfurter
+  const fxRes = await fetch(FRANKFURTER_URL, { signal: AbortSignal.timeout(6_000) });
+  if (!fxRes.ok) throw new Error(`frankfurter ${fxRes.status}`);
+  const fxJson = (await fxRes.json()) as { rates?: Record<string, number>; date?: string };
+  if (!fxJson.rates?.EUR) throw new Error("frankfurter payload missing rates");
 
-  let tokenUsd = TOKEN_USD_FALLBACK;
+  // Crypto
+  const crypto: Record<string, number> = { monad: TOKEN_USD_FALLBACK };
   try {
-    const tokenRes = await fetch(TOKEN_URL, { signal: AbortSignal.timeout(5_000) });
-    if (tokenRes.ok) {
-      const tokenJson = (await tokenRes.json()) as { monad?: { usd?: number } };
-      if (tokenJson.monad?.usd && tokenJson.monad.usd > 0) tokenUsd = tokenJson.monad.usd;
+    const cryptoRes = await fetch(CRYPTO_URL, { signal: AbortSignal.timeout(6_000) });
+    if (cryptoRes.ok) {
+      const cryptoJson = (await cryptoRes.json()) as Record<string, { usd?: number }>;
+      for (const [id, val] of Object.entries(cryptoJson)) {
+        if (val?.usd && val.usd > 0) crypto[id] = val.usd;
+      }
     }
   } catch {
-    // A missing MON quote must not blank the wallet.
+    // Non-fatal; keep fallback for MON
   }
 
-  return { tokenUsd, fx: { USD: 1, ...fxJson.rates }, updatedAt: Date.now() };
+  const tokenUsd = crypto.monad ?? TOKEN_USD_FALLBACK;
+
+  return {
+    tokenUsd,
+    crypto,
+    fx: { USD: 1, ...fxJson.rates },
+    updatedAt: Date.now(),
+    source: { fx: "frankfurter.app (ECB)", crypto: "coingecko" },
+  };
 }
 
 async function current(): Promise<Cache> {
@@ -78,11 +96,32 @@ export async function getRates(currency: string) {
     usdLocal: usdRate(snap, code),
     currency: code,
     updatedAt: new Date(snap.updatedAt).toISOString(),
+    source: snap.source,
+  };
+}
+
+/** Full snapshot for the frontend dashboard */
+export async function getAllRates() {
+  const snap = await current();
+  const currencies: Record<string, number> = {};
+  for (const code of SUPPORTED_CURRENCIES) {
+    if (snap.fx[code]) currencies[code] = snap.fx[code];
+  }
+  return {
+    crypto: snap.crypto,
+    currencies,
+    monUsd: snap.tokenUsd,
+    updatedAt: new Date(snap.updatedAt).toISOString(),
+    source: snap.source,
   };
 }
 
 export function listCurrencies() {
-  return SUPPORTED_CURRENCIES.map((code) => ({ code, name: CURRENCIES[code].name, exponent: CURRENCIES[code].exponent }));
+  return SUPPORTED_CURRENCIES.map((code) => ({
+    code,
+    name: CURRENCIES[code].name,
+    exponent: CURRENCIES[code].exponent,
+  }));
 }
 
 /** X to Y through USD. 1 unit of `from` buys `rate` units of `to`. */
@@ -93,7 +132,10 @@ export async function quote(fromRaw: string, toRaw: string, amountRaw: string) {
   const fromPerUsd = usdRate(snap, from);
   const toPerUsd = usdRate(snap, to);
   const rate = toPerUsd / fromPerUsd;
-  const entered = from === "USD" ? parseUsdToMicro(amountRaw) / 1_000_000 : parseAmountMinor(amountRaw, from) / 10 ** exponentOf(from);
+  const entered =
+    from === "USD"
+      ? parseUsdToMicro(amountRaw) / 1_000_000
+      : parseAmountMinor(amountRaw, from) / 10 ** exponentOf(from);
   const convertedMinor = Math.round(entered * rate * 10 ** exponentOf(to));
   return {
     from,
@@ -102,6 +144,7 @@ export async function quote(fromRaw: string, toRaw: string, amountRaw: string) {
     rate,
     converted: minorToDecimalString(convertedMinor, to),
     updatedAt: new Date(snap.updatedAt).toISOString(),
+    source: snap.source.fx,
   };
 }
 
@@ -121,6 +164,7 @@ export async function tokenPrice(currencyRaw: string, amountRaw = "1") {
     amount: amountRaw,
     value: minorToDecimalString(valueMinor, currency),
     updatedAt: new Date(snap.updatedAt).toISOString(),
+    source: snap.source,
   };
 }
 

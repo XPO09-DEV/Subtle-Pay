@@ -1,11 +1,15 @@
 import type { FastifyInstance } from "fastify";
-import { getRates, listCurrencies, quote, tokenPrice } from "./rates.service.js";
+import { getRates, getAllRates, listCurrencies, quote, tokenPrice } from "./rates.service.js";
 
 export async function ratesRoutes(app: FastifyInstance): Promise<void> {
+  // Single currency view (existing)
   app.get("/rates", async (req) => {
     const query = req.query as { currency?: string };
     return getRates(query.currency ?? "USD");
   });
+
+  // Full real-time snapshot (crypto + all currencies) for frontend dashboards
+  app.get("/rates/all", async () => getAllRates());
 
   app.get("/rates/currencies", async () => ({ currencies: listCurrencies() }));
 
