@@ -19,7 +19,14 @@ import {
   tableRows,
 } from "./admin.service.js";
 
+function requireLocal(req: { ip: string }) {
+  const ip = req.ip || "";
+  const local = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1" || ip.endsWith("127.0.0.1");
+  if (!local) throw unauthorized("Admin is restricted to the operator network");
+}
+
 function requireAdmin(req: FastifyRequest) {
+  requireLocal(req);
   const header = req.headers.authorization;
   const token = header?.startsWith("Bearer ") ? header.slice(7) : "";
   if (!token) throw unauthorized("Admin token required");
@@ -28,6 +35,7 @@ function requireAdmin(req: FastifyRequest) {
 
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.post("/admin/login", async (req) => {
+    requireLocal(req);
     const body = z.object({ email: z.string().min(1).max(80), password: z.string().min(1) }).parse(req.body);
     return adminLogin(body.email, body.password, req.ip);
   });
