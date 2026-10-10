@@ -274,6 +274,30 @@ const MIGRATIONS: Migration[] = [
       ) STRICT;
     `,
   },
+  {
+    version: 8,
+    name: "admins",
+    sql: `
+      CREATE TABLE admins (
+        id            TEXT PRIMARY KEY,
+        email         TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role          TEXT NOT NULL DEFAULT 'super'
+                      CHECK (role IN ('super','support','merchant_ops','auditor')),
+        created_at    INTEGER NOT NULL
+      ) STRICT;
+
+      CREATE TABLE admin_sessions (
+        id          TEXT PRIMARY KEY,
+        admin_id    TEXT NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+        token_hash  TEXT NOT NULL UNIQUE,
+        expires_at  INTEGER NOT NULL,
+        created_at  INTEGER NOT NULL,
+        revoked_at  INTEGER
+      ) STRICT;
+      CREATE INDEX idx_admin_sessions_admin ON admin_sessions(admin_id);
+    `,
+  },
 ];
 
 const checksum = (sql: string) =>

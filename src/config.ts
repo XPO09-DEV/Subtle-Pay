@@ -46,7 +46,9 @@ const schema = z
     PASSWORD_PEPPER: hexBytes(32),
     MASTER_KEY: hexBytes(32), // wraps every per-wallet data key (KMS interface)
 
-    // Optional key so our team can approve merchant verification (header x-verify-key)
+    // Bootstrap the first Super Admin (optional; created once if missing)
+    SUPER_ADMIN_EMAIL: z.string().email().optional(),
+    SUPER_ADMIN_PASSWORD: z.string().min(12).optional(),
     MERCHANT_VERIFY_KEY: z.string().optional(),
     REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
 

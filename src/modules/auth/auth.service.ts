@@ -13,7 +13,7 @@ import {
 } from "../../lib/password.js";
 import { issueSession, revokeAllSessions, type SessionMeta } from "../../lib/tokens.js";
 import { encryptSecret, zeroize } from "../../lib/kms.js";
-import { badRequest, invalidCredentials } from "../../lib/errors.js";
+import { badRequest, invalidCredentials, forbidden } from "../../lib/errors.js";
 import { assertCurrency, type Currency } from "../../lib/currency.js";
 import { audit } from "../../lib/audit.js";
 
@@ -74,6 +74,7 @@ export async function login(accountIdRaw: string, password: string, meta: Sessio
   }
 
   assertNotLocked(user.locked_until);
+  if (user.banned_at) throw forbidden("This account has been banned", "ACCOUNT_BANNED");
   const ok = await verifyPassword(user.password_hash, password);
   if (!ok) {
     const failure = recordLoginFailure(user.id);

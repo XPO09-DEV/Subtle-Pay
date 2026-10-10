@@ -19,6 +19,8 @@ import { mandateRoutes } from "./modules/mandates/mandates.routes.js";
 import { bridgeRoutes } from "./modules/bridge/bridge.routes.js";
 import { assetRoutes } from "./modules/assets/assets.routes.js";
 import { merchantRoutes } from "./modules/merchant/merchant.routes.js";
+import { adminRoutes } from "./modules/admin/admin.routes.js";
+import { ensureBootstrapAdmin } from "./modules/admin/admin.service.js";
 
 const app = Fastify({
   logger: {
@@ -55,9 +57,11 @@ await app.register(mandateRoutes);
 await app.register(bridgeRoutes);
 await app.register(assetRoutes);
 await app.register(merchantRoutes);
+await app.register(adminRoutes);
 
 const hashMs = await initPassword();
 kmsSelfTest();
+await ensureBootstrapAdmin();
 app.log.info({ hashMs }, "password hasher ready");
 
 const shutdown = async (signal: string) => {
