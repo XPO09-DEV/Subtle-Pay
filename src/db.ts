@@ -235,6 +235,22 @@ const MIGRATIONS: Migration[] = [
       ALTER TABLE users ADD COLUMN mpin_locked_until INTEGER;
     `,
   },
+  {
+    version: 5,
+    name: "webauthn_credentials",
+    sql: `
+      CREATE TABLE webauthn_credentials (
+        id            TEXT PRIMARY KEY,
+        user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        credential_id TEXT NOT NULL UNIQUE,
+        public_key    TEXT NOT NULL,
+        counter       INTEGER NOT NULL DEFAULT 0,
+        transports    TEXT,
+        created_at    INTEGER NOT NULL
+      ) STRICT;
+      CREATE INDEX idx_webauthn_user ON webauthn_credentials(user_id);
+    `,
+  },
 ];
 
 const checksum = (sql: string) =>

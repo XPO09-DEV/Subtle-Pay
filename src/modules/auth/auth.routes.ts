@@ -1,10 +1,18 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { changePassword, getMe, login, register, setCurrency, setMpin, changeMpin } from "./auth.service.js";
+import {
+  generateChallenge,
+  saveCredential,
+  verifyBiometricAssertion,
+  hasBiometric,
+  listCredentials,
+} from "./webauthn.service.js";
 import { getHome } from "./home.js";
 import { currentUser, requireAuth } from "../../middleware/auth.js";
 import { revokeSession, rotateSession, TokenReuseError } from "../../lib/tokens.js";
 import { audit } from "../../lib/audit.js";
+import { badRequest } from "../../lib/errors.js";
 
 const passwordSchema = z.string().min(1).max(128);
 const registerBody = z.object({ password: passwordSchema });
@@ -78,6 +86,36 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(req);
     const body = changeMpinBody.parse(req.body);
     return changeMpin(user.id, body.oldMpin, body.newMpin, req.ip);
+  });
+
+  // Biometric (WebAuthn / platform authenticator: face or fingerprint)
+  app.post("/auth/biometric/register/options", { preHandler: requireAuth }, async (req) => {
+    const user = currentUser(req);
+    const challenge = generateChallenge(user.id);
+    return { challenge, userId: user.id };
+  });
+
+  app.post("/auth/biometric/register/verify", { preHandler: requireAuth }, async (req) => {
+    const user = currentUser(req);
+    const body = z.object({
+      credentialId: z.string().min(10),
+      publicKey: z.string().min(10),
+      transports: z.string().optional(),
+    }).parse(req.body);
+    return saveCredential(user.id, body.credentialId, body.publicKey, body.transports);
+  });
+
+  app.post("/auth/biometric/auth/options", { preHandler: requireAuth }, async (req) => {
+    const user = currentUser(req);
+    if (!hasBiometric(user.id)) throw badRequest("No biometric registered");
+    const challenge = generateChallenge(user.id);
+    const creds = listCredentials(user.id);
+    return { challenge, credentials: creds.map((c) => ({ id: c.credential_id, transports: c.transports })) };
+  });
+
+  app.get("/auth/biometric/status", { preHandler: requireAuth }, async (req) => {
+    const user = currentUser(req);
+    return { hasBiometric: hasBiometric(user.id) };
   });
 
   app.get("/me", { preHandler: requireAuth }, async (req) => getMe(currentUser(req).id));
