@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { changePassword, getMe, login, register, setCurrency, setMpin, changeMpin } from "./auth.service.js";
+import { changePassword, getMe, login, register, setCurrency, setMpin, changeMpin, banUser, unbanUser } from "./auth.service.js";
 import {
   generateChallenge,
   saveCredential,
@@ -12,7 +12,8 @@ import { getHome } from "./home.js";
 import { currentUser, requireAuth } from "../../middleware/auth.js";
 import { revokeSession, rotateSession, TokenReuseError } from "../../lib/tokens.js";
 import { audit } from "../../lib/audit.js";
-import { badRequest } from "../../lib/errors.js";
+import { badRequest, unauthorized } from "../../lib/errors.js";
+import { config } from "../../config.js";
 
 const passwordSchema = z.string().min(1).max(128);
 const registerBody = z.object({ password: passwordSchema });
@@ -58,7 +59,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         expiresIn: next.accessTokenExpiresIn,
       };
     } catch (err) {
-      if (err instanceof TokenReuseError) audit(err.userId, "auth.token_reused", undefined, req.ip);
+      if (err instanceof TokenReuseError) {
+        // Refresh-token reuse is a strong signal of token theft / impersonation.
+        audit(err.userId, "auth.token_reused", undefined, req.ip);
+        banUser(err.userId, "Token reuse detected — possible impersonation", "system");
+      }
       throw err;
     }
   });
@@ -121,6 +126,28 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.get("/me", { preHandler: requireAuth }, async (req) => getMe(currentUser(req).id));
 
   app.get("/home", { preHandler: requireAuth }, async (req) => getHome(currentUser(req).id));
+
+  // Operator-only: ban a user attempting to impersonate a legit token (or any abuse)
+  app.post("/admin/ban", async (req) => {
+    const key = req.headers["x-operator-key"];
+    if (!config.OPERATOR_BAN_KEY || key !== config.OPERATOR_BAN_KEY) {
+      throw unauthorized("Invalid operator key");
+    }
+    const body = z.object({
+      accountId: z.string().min(10).max(40),
+      reason: z.string().min(1).max(200).default("Impersonation of legitimate token"),
+    }).parse(req.body);
+    return banUser(body.accountId, body.reason, "operator");
+  });
+
+  app.post("/admin/unban", async (req) => {
+    const key = req.headers["x-operator-key"];
+    if (!config.OPERATOR_BAN_KEY || key !== config.OPERATOR_BAN_KEY) {
+      throw unauthorized("Invalid operator key");
+    }
+    const body = z.object({ accountId: z.string().min(10).max(40) }).parse(req.body);
+    return unbanUser(body.accountId, "operator");
+  });
 
   app.put("/me/currency", { preHandler: requireAuth }, async (req) => {
     const body = currencyBody.parse(req.body);

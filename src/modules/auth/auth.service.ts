@@ -12,6 +12,7 @@ import {
   verifyPasswordDummy,
 } from "../../lib/password.js";
 import { issueSession, revokeAllSessions, type SessionMeta } from "../../lib/tokens.js";
+import { forbidden } from "../../lib/errors.js";
 import { encryptSecret, zeroize } from "../../lib/kms.js";
 import { badRequest, invalidCredentials } from "../../lib/errors.js";
 import { assertCurrency, type Currency } from "../../lib/currency.js";
@@ -74,6 +75,9 @@ export async function login(accountIdRaw: string, password: string, meta: Sessio
   }
 
   assertNotLocked(user.locked_until);
+  if (user.banned_at) {
+    throw forbidden("This account has been banned", "ACCOUNT_BANNED");
+  }
   const ok = await verifyPassword(user.password_hash, password);
   if (!ok) {
     const failure = recordLoginFailure(user.id);
@@ -127,10 +131,11 @@ export async function changePassword(
 }
 
 export function getMe(userId: string) {
-  const user = db.prepare("SELECT id, currency, mpin_hash FROM users WHERE id = ?").get(userId) as
-    | { id: string; currency: string; mpin_hash: string | null }
+  const user = db.prepare("SELECT id, currency, mpin_hash, banned_at, ban_reason FROM users WHERE id = ?").get(userId) as
+    | { id: string; currency: string; mpin_hash: string | null; banned_at: number | null; ban_reason: string | null }
     | undefined;
   if (!user) throw invalidCredentials();
+  if (user.banned_at) throw forbidden("This account has been banned", "ACCOUNT_BANNED");
   const alias = db.prepare("SELECT alias FROM aliases WHERE user_id = ?").get(userId) as
     | { alias: string }
     | undefined;
@@ -140,6 +145,33 @@ export function getMe(userId: string) {
     currency: user.currency,
     hasMpin: !!user.mpin_hash,
   };
+}
+
+/** Permanently ban a user and revoke all their sessions. */
+export function banUser(accountId: string, reason: string, actor?: string) {
+  const user = db.prepare("SELECT id FROM users WHERE id = ?").get(accountId) as { id: string } | undefined;
+  if (!user) throw badRequest("User not found");
+  const now = Date.now();
+  db.prepare("UPDATE users SET banned_at = ?, ban_reason = ?, updated_at = ? WHERE id = ?").run(
+    now,
+    reason.slice(0, 200),
+    now,
+    accountId
+  );
+  revokeAllSessions(accountId);
+  audit(actor ?? "system", "auth.user_banned", { target: accountId, reason });
+  return { ok: true, accountId, bannedAt: now, reason };
+}
+
+export function unbanUser(accountId: string, actor?: string) {
+  const user = db.prepare("SELECT id FROM users WHERE id = ?").get(accountId) as { id: string } | undefined;
+  if (!user) throw badRequest("User not found");
+  db.prepare("UPDATE users SET banned_at = NULL, ban_reason = NULL, updated_at = ? WHERE id = ?").run(
+    Date.now(),
+    accountId
+  );
+  audit(actor ?? "system", "auth.user_unbanned", { target: accountId });
+  return { ok: true, accountId };
 }
 
 export function setCurrency(userId: string, currency: string): { currency: Currency } {

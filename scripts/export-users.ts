@@ -15,6 +15,7 @@ const db = new Database(config.DB_PATH, { readonly: true });
 const rows = db
   .prepare(
     `SELECT u.id, u.currency, u.failed_attempts, u.locked_until, u.created_at, u.updated_at,
+            u.banned_at, u.ban_reason,
             a.alias, w.address
      FROM users u
      LEFT JOIN aliases a ON a.user_id = u.id
@@ -26,6 +27,8 @@ const rows = db
   currency: string;
   failed_attempts: number;
   locked_until: number | null;
+  banned_at: number | null;
+  ban_reason: string | null;
   created_at: number;
   updated_at: number;
   alias: string | null;
@@ -49,6 +52,8 @@ const header = [
   "Updated At",
   "Failed Login Attempts",
   "Locked Until",
+  "Banned At",
+  "Ban Reason",
 ];
 
 const lines = [header.join(",")];
@@ -62,6 +67,8 @@ for (const r of rows) {
     iso(r.updated_at),
     String(r.failed_attempts ?? 0),
     iso(r.locked_until),
+    iso(r.banned_at),
+    r.ban_reason ?? "",
   ].map((v) => `"${String(v).replace(/"/g, '""')}"`);
   lines.push(vals.join(","));
 }

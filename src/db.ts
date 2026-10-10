@@ -251,6 +251,14 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_webauthn_user ON webauthn_credentials(user_id);
     `,
   },
+  {
+    version: 6,
+    name: "user_bans",
+    sql: `
+      ALTER TABLE users ADD COLUMN banned_at INTEGER;
+      ALTER TABLE users ADD COLUMN ban_reason TEXT;
+    `,
+  },
 ];
 
 const checksum = (sql: string) =>
@@ -344,6 +352,8 @@ export interface UserRow {
   mpin_hash: string | null;
   mpin_failed_attempts: number;
   mpin_locked_until: number | null;
+  banned_at: number | null;
+  ban_reason: string | null;
   created_at: number;
   updated_at: number;
 }
