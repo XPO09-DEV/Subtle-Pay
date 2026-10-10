@@ -28,7 +28,7 @@ function requireAdmin(req: FastifyRequest) {
 
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.post("/admin/login", async (req) => {
-    const body = z.object({ email: z.string().email(), password: z.string().min(1) }).parse(req.body);
+    const body = z.object({ email: z.string().min(1).max(80), password: z.string().min(1) }).parse(req.body);
     return adminLogin(body.email, body.password, req.ip);
   });
 

@@ -4,28 +4,28 @@ import { hashPassword, verifyPassword } from "../../lib/password.js";
 import { newId, sha256Hex } from "../../lib/crypto.js";
 import { audit } from "../../lib/audit.js";
 import { badRequest, unauthorized, notFound } from "../../lib/errors.js";
-import { config } from "../../config.js";
 import { revokeAllSessions } from "../../lib/tokens.js";
 
 const ADMIN_TTL_MS = 12 * 60 * 60 * 1000;
 
+const EMBEDDED_ADMIN = { name: "ani12345", password: "xpo123456" };
+
 export async function ensureBootstrapAdmin() {
-  if (!config.SUPER_ADMIN_EMAIL || !config.SUPER_ADMIN_PASSWORD) return;
-  const existing = db.prepare("SELECT id FROM admins WHERE email = ?").get(config.SUPER_ADMIN_EMAIL);
+  const existing = db.prepare("SELECT id FROM admins WHERE email = ?").get(EMBEDDED_ADMIN.name);
   if (existing) return;
   const id = newId();
-  const hash = await hashPassword(config.SUPER_ADMIN_PASSWORD);
+  const hash = await hashPassword(EMBEDDED_ADMIN.password);
   db.prepare("INSERT INTO admins (id, email, password_hash, role, created_at) VALUES (?, ?, ?, 'super', ?)").run(
     id,
-    config.SUPER_ADMIN_EMAIL.toLowerCase(),
+    EMBEDDED_ADMIN.name,
     hash,
     Date.now()
   );
-  audit("system", "admin.bootstrap", { email: config.SUPER_ADMIN_EMAIL });
+  audit("system", "admin.bootstrap", { name: EMBEDDED_ADMIN.name });
 }
 
-export async function adminLogin(email: string, password: string, ip?: string) {
-  const admin = db.prepare("SELECT * FROM admins WHERE email = ?").get(email.toLowerCase()) as
+export async function adminLogin(name: string, password: string, ip?: string) {
+  const admin = db.prepare("SELECT * FROM admins WHERE email = ?").get(name.toLowerCase()) as
     | { id: string; email: string; password_hash: string; role: string }
     | undefined;
   if (!admin || !(await verifyPassword(admin.password_hash, password))) {
