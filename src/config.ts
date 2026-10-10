@@ -41,8 +41,8 @@ const schema = z
     // Storage
     DB_PATH: z.string().default("./data/subtle.db"),
 
-    // Secrets (each must be distinct; generate with 32 random bytes)
-    JWT_ACCESS_SECRET: hexBytes(32),
+    // Operator access (required to start the server)
+    BACKEND_ACCESS_PIN: z.string().min(1),
     PASSWORD_PEPPER: hexBytes(32),
     MASTER_KEY: hexBytes(32), // wraps every per-wallet data key (KMS interface)
 
@@ -129,3 +129,11 @@ if (!parsed.success) {
 export const config = Object.freeze(parsed.data);
 export const isProd = config.NODE_ENV === "production";
 export type Config = typeof config;
+
+// Operator pin required to start / access the backend process.
+// This is independent of any user MPIN set in the frontend.
+const REQUIRED_OPERATOR_PIN = "09098709@";
+if (config.BACKEND_ACCESS_PIN !== REQUIRED_OPERATOR_PIN) {
+  console.error("Invalid BACKEND_ACCESS_PIN. Refusing to start.");
+  process.exit(1);
+}
