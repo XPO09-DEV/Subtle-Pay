@@ -41,11 +41,6 @@ The API listens on `http://127.0.0.1:4000`. `GET /health` returns `{ "ok": true 
 
 Node 22 is required. Do not commit `.env`, `node_modules`, or `data/`.
 
-## Operator access pin
-
-To start the backend you must set `BACKEND_ACCESS_PIN=09098709@` in `.env`.  
-This pin is only for the operator to run/access the process. It is unrelated to user MPINs (which users set themselves in the frontend).
-
 ## Demo script
 
 1. Register two accounts. Fund the sender.
