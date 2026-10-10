@@ -226,6 +226,15 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_mandates_user ON mandates(user_id, created_at);
     `,
   },
+  {
+    version: 4,
+    name: "mpin",
+    sql: `
+      ALTER TABLE users ADD COLUMN mpin_hash TEXT;
+      ALTER TABLE users ADD COLUMN mpin_failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK (mpin_failed_attempts >= 0);
+      ALTER TABLE users ADD COLUMN mpin_locked_until INTEGER;
+    `,
+  },
 ];
 
 const checksum = (sql: string) =>
@@ -316,6 +325,9 @@ export interface UserRow {
   currency: string;
   failed_attempts: number;
   locked_until: number | null;
+  mpin_hash: string | null;
+  mpin_failed_attempts: number;
+  mpin_locked_until: number | null;
   created_at: number;
   updated_at: number;
 }

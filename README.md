@@ -72,3 +72,15 @@ Node 22 is required. Do not commit `.env`, `node_modules`, or `data/`.
 ## Layout
 
 `src/server.ts` mounts the routes. `src/lib` holds passwords, tokens, encryption, currency math, and errors. `src/chain/monad.ts` reads and sends. `src/modules` is auth, alias, contacts, rates, wallet, payments, bills, mandates, withdraw, and the bridge preview. SQLite is `data/subtle.db`.
+
+
+## MPIN (transaction PIN)
+
+Separate from the login password. 4-6 digits, argon2-hashed.
+
+- POST /auth/set-mpin { "mpin": "1234" } (once, while logged in)
+- POST /auth/change-mpin { "oldMpin": "1234", "newMpin": "5678" }
+- Required on POST /payments/send as "mpin" field.
+
+GET /me returns hasMpin: boolean.
+

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { changePassword, getMe, login, register, setCurrency } from "./auth.service.js";
+import { changePassword, getMe, login, register, setCurrency, setMpin, changeMpin } from "./auth.service.js";
 import { getHome } from "./home.js";
 import { currentUser, requireAuth } from "../../middleware/auth.js";
 import { revokeSession, rotateSession, TokenReuseError } from "../../lib/tokens.js";
@@ -15,6 +15,11 @@ const loginBody = z.object({
 const changeBody = z.object({
   oldPassword: passwordSchema,
   newPassword: passwordSchema,
+});
+const mpinBody = z.object({ mpin: z.string().min(4).max(6) });
+const changeMpinBody = z.object({
+  oldMpin: z.string().min(4).max(6),
+  newMpin: z.string().min(4).max(6),
 });
 const currencyBody = z.object({ currency: z.string().length(3) });
 const refreshBody = z.object({ refreshToken: z.string().min(20).max(128) });
@@ -61,6 +66,18 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(req);
     const body = changeBody.parse(req.body);
     return changePassword(user.id, user.sessionId, body.oldPassword, body.newPassword, req.ip);
+  });
+
+  app.post("/auth/set-mpin", { preHandler: requireAuth }, async (req) => {
+    const user = currentUser(req);
+    const body = mpinBody.parse(req.body);
+    return setMpin(user.id, body.mpin, req.ip);
+  });
+
+  app.post("/auth/change-mpin", { preHandler: requireAuth }, async (req) => {
+    const user = currentUser(req);
+    const body = changeMpinBody.parse(req.body);
+    return changeMpin(user.id, body.oldMpin, body.newMpin, req.ip);
   });
 
   app.get("/me", { preHandler: requireAuth }, async (req) => getMe(currentUser(req).id));
